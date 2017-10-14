@@ -1,0 +1,39 @@
+This file documents the design of this project, and hopefully some ELF-related 
+knowledge.
+
+General Notes
+-------------
+
+Now we are at the very beginning stage, so the design may change rapidly from 
+commit to commit.
+
+This is a project basiclly for learning GO language and ELF format, Any 
+suggestion or critics are welcome!
+
+
+Project Structure
+-----------------
+
+Traditionally, GNU project treats the binary tools in the binutils-gdb archive.
+Most of the GNU/Linux distributions partition the whole into two packages, 
+binutils and gdb.
+
+We re-implement the binutils part in GO, based on the official debug/elf 
+package, and do not reference to the original code base.  We plan to implement
+this project similar to what busybox does:  unified entity, multiple usage. 
+
+In the top directory (go-binutils/), there are only one go file:
++ main.go: package main, the entry point, doing flag parsing stuff.
+
+There will be a directory called common, in which are go sources of package
+common, containing output-related features, libbfd-like helpers, etc.
+
+And finally, the individual directories, containing utilities from addr2line 
+to strip.
+
+
+Contribution
+------------
+
+Since I do this project for learning purpose and for fun, please feel free to 
+give suggestions, critics, issues and PRs.  Thanks!
