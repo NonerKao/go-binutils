@@ -23,9 +23,10 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
-	"./common"
-	"./readelf"
+	"github.com/NonerKao/go-binutils/common"
+	"github.com/NonerKao/go-binutils/readelf"
 )
 
 var (
@@ -33,14 +34,37 @@ var (
 )
 
 func main() {
-	flag.Usage = func() {
-		fmt.Printf("Usage of go-binutils: %s\n", os.Args[0])
-		fmt.Printf("    example7 file1 file2 ...\n")
-		flag.PrintDefaults()
+
+	util, argv := flagProcess()
+	if util == nil {
+		return
 	}
+
+	util.Run(argv)
+	util.Output()
+
+}
+
+func flagProcess() (common.Util, map[string]string) {
+
+	var util common.Util
+	switch {
+	case strings.HasSuffix(os.Args[0], "readelf"):
+		util = readelf.Init()
+	default:
+		printUsage()
+		return nil, nil
+	}
+
+	flag.Usage = printUsage
+
 	flag.Parse()
 
-	util := readelf.Init()
-	util.Run(make(map[string]string))
-	util.Output()
+	return util, make(map[string]string)
+}
+
+func printUsage() {
+	fmt.Printf("Usage of go-binutils: %s\n", os.Args[0])
+	fmt.Printf("    example7 file1 file2 ...\n")
+	flag.PrintDefaults()
 }
