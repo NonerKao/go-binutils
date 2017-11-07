@@ -20,6 +20,6 @@ package common
 // util.go: The Util interface
 
 type Util interface {
-	Run(args map[string]string) error
+	Run(args map[string]*string) error
 	Output() error
 }

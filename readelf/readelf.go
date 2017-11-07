@@ -34,8 +34,11 @@ func Init() *ReadELFUtil {
 	return &ReadELFUtil{Data: ReadELFData{Section: "Test 1"}}
 }
 
-func (re *ReadELFUtil) Run(args map[string]string) error {
+func (re *ReadELFUtil) Run(args map[string]*string) error {
 	fmt.Println(args)
+	fmt.Println(args["l"])
+	fmt.Println(*args["h"])
+	fmt.Println(*args["l"])
 	return nil
 }
 

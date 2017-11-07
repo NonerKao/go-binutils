@@ -45,22 +45,26 @@ func main() {
 
 }
 
-func flagProcess() (common.Util, map[string]string) {
+func flagProcess() (common.Util, map[string]*string) {
 
 	var util common.Util
+	argv := make(map[string]*string)
+
 	switch {
 	case strings.HasSuffix(os.Args[0], "readelf"):
 		util = readelf.Init()
+		argv["h"] = flag.String("h", "default", "File header")
+		argv["l"] = flag.String("l", "default", "Program headers")
+		argv["S"] = flag.String("S", "default", "Section headers")
 	default:
 		printUsage()
 		return nil, nil
 	}
 
 	flag.Usage = printUsage
-
 	flag.Parse()
 
-	return util, make(map[string]string)
+	return util, argv
 }
 
 func printUsage() {
