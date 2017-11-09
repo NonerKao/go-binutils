@@ -17,7 +17,7 @@
 
 package main
 
-// main.go: The unified entry point of go-binutils project
+// main.go: The unified entry point
 
 import (
 	"flag"
@@ -37,6 +37,7 @@ func main() {
 
 	util, argv := flagProcess()
 	if util == nil {
+		printUsage()
 		return
 	}
 
@@ -53,9 +54,9 @@ func flagProcess() (common.Util, map[string]*string) {
 	switch {
 	case strings.HasSuffix(os.Args[0], "readelf"):
 		util = readelf.Init()
-		argv["h"] = flag.String("h", "default", "File header")
-		argv["l"] = flag.String("l", "default", "Program headers")
-		argv["S"] = flag.String("S", "default", "Section headers")
+		argv["h"] = flag.String("h", "default", "Show file header")
+		argv["l"] = flag.String("l", "default", "Show program headers")
+		argv["S"] = flag.String("S", "default", "Show Section headers")
 	default:
 		printUsage()
 		return nil, nil

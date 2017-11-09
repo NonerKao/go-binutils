@@ -11,6 +11,11 @@ This is a project basiclly for learning GO language and ELF format, Any
 suggestion or critics are welcome!
 
 
+Installation
+------------
+Simply `make` and `make install`.  Please make sure you have setup the `GOPATH` environment variable correctly.
+
+
 Project Structure
 -----------------
 

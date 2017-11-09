@@ -1,19 +1,24 @@
+
+PACKAGE		= go-binutils
+
+UTILS		= readelf objdump
+BINDIR		= $(GOPATH)/bin
+TARGETS		= $(addprefix $(BINDIR)/, $(UTILS))
+
 .nstPHONY: build install clean
 
-PACKAGE = go-binutils
-GOPATH  = $(PWD)/../../../..
-BASE    = $(GOPATH)/src/$(PACKAGE)
+all: build 
 
-LIST    = $(shell ls)
+build: common $(UTILS) main.go
+	go build
 
-all: build
+install: $(BINDIR)/$(PACKAGE) $(TARGETS)
 
-build: $(LIST)
-	go build 
-
-install: 
+$(BINDIR)/go-binutils: common $(UTILS) main.go
 	go install
-	ln -s $(GOPATH)/bin/go-binutils $(GOPATH)/bin/readelf	
+
+$(TARGETS): $(BINDIR)/%: %
+	ln -s $(BINDIR)/$(PACKAGE) $(BINDIR)/$<
 
 clean:
-	rm -f main go-binutils $(GOPATH)/bin/go-binutils
+	rm -f main go-binutils $(BINDIR)/$(PACKAGE) $(TARGETS)
