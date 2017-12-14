@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2017  Quey-Liang Kao  s101062801@m101.nthu.edu.tw
+// Copyright (C) 2017  Alan (Quey-Liang) Kao  alankao@andestech.com
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -17,9 +17,21 @@
 
 package common
 
-// util.go: The Util interface
+import (
+	"debug/elf"
+)
+
+// util.go: Common utilities and the Util interface
+
+func Init(fileName string) (*elf.File, error) {
+	return elf.Open(fileName)
+}
+
+func Output(content string) {
+	return
+}
 
 type Util interface {
-	Run(args map[string]*string) error
-	Output() error
+	DefineFlags() map[string]interface{}
+	Run(args map[string]interface{}) (string, error)
 }

@@ -1,5 +1,5 @@
 //
-// Copyright (C) 2017  Quey-Liang Kao  s101062801@m101.nthu.edu.tw
+// Copyright (C) 2017  Alan (Quey-Liang) Kao  alankao@andestech.com
 //
 // This program is free software: you can redistribute it and/or modify
 // it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@ package main
 // main.go: The unified entry point
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -29,43 +30,40 @@ import (
 	"github.com/NonerKao/go-binutils/readelf"
 )
 
-var (
-	util common.Util
-)
-
 func main() {
 
-	util, argv := flagProcess()
-	if util == nil {
+	util, err := route()
+	if err != nil {
+		fmt.Println(err.Error())
 		printUsage()
 		return
 	}
 
-	util.Run(argv)
-	util.Output()
-
-}
-
-func flagProcess() (common.Util, map[string]*string) {
-
-	var util common.Util
-	argv := make(map[string]*string)
-
-	switch {
-	case strings.HasSuffix(os.Args[0], "readelf"):
-		util = readelf.Init()
-		argv["h"] = flag.String("h", "default", "Show file header")
-		argv["l"] = flag.String("l", "default", "Show program headers")
-		argv["S"] = flag.String("S", "default", "Show Section headers")
-	default:
-		printUsage()
-		return nil, nil
-	}
-
+	args := util.DefineFlags()
 	flag.Usage = printUsage
 	flag.Parse()
 
-	return util, argv
+	raw, err2 := util.Run(args)
+	if err2 != nil {
+		return
+	}
+
+	common.Output(raw)
+
+}
+
+func route() (common.Util, error) {
+
+	switch {
+	case strings.HasSuffix(os.Args[0], "readelf"):
+		util, err := readelf.Init(os.Args[len(os.Args)-1])
+		if err != nil {
+			return nil, err
+		}
+		return util, nil
+	default:
+		return nil, errors.New("No such usage!")
+	}
 }
 
 func printUsage() {

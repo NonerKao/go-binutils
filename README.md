@@ -1,5 +1,5 @@
 # go-binutils
-The GNU implementation in Go
+The GNU binutils implementation in Go
 
 ### Completed:
 
