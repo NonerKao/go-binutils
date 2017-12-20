@@ -19,26 +19,33 @@ package readelf
 
 import (
 	"debug/elf"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"os"
+	"text/tabwriter"
 
 	"github.com/NonerKao/go-binutils/common"
 )
 
 type readelfUtil struct {
 	file *elf.File
+	raw  map[string][]byte
 }
 
-func Init(fileName string) (*readelfUtil, error) {
+func New() *readelfUtil {
+	return &readelfUtil{file: nil, raw: make(map[string][]byte)}
+}
 
-	var reu readelfUtil
+func (reu *readelfUtil) Init(fileName string) error {
+
 	var err error
 	reu.file, err = common.Init(fileName)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return &reu, nil
+	return nil
 }
 
 func (reu *readelfUtil) DefineFlags() map[string]interface{} {
@@ -52,11 +59,42 @@ func (reu *readelfUtil) DefineFlags() map[string]interface{} {
 	return args
 }
 
-func (reu *readelfUtil) Run(args map[string]interface{}) (string, error) {
+func (reu *readelfUtil) Run(args map[string]interface{}) error {
 
-	fmt.Println(*args["S"].(*bool))
-	fmt.Println(*args["h"].(*bool))
-	fmt.Println(*args["l"].(*bool))
+	if *args["h"].(*bool) {
+		raw, err := json.Marshal(reu.file.FileHeader)
+		if err != nil {
+			return err
+		}
 
-	return "nothing yet", nil
+		reu.raw["h"] = raw
+	}
+
+	return nil
+}
+
+func (reu *readelfUtil) Output(args map[string]interface{}) error {
+
+	w := new(tabwriter.Writer)
+	w.Init(os.Stdout, 0, 8, 0, '\t', 0)
+
+	if *args["h"].(*bool) {
+		var output elf.FileHeader
+		/* err := */ json.Unmarshal(reu.raw["h"], &output)
+		/*if err != nil {
+			return err
+		}*/
+
+		fmt.Fprintln(w, "ELF File Header:\t\t")
+		fmt.Fprintln(w, "\tClass:\t", output.Class.GoString())
+		fmt.Fprintln(w, "\tData:\t", output.Data.GoString())
+		fmt.Fprintln(w, "\tOSABI:\t", output.OSABI.GoString())
+		fmt.Fprintln(w, "\tABIVersion:\t", output.ABIVersion)
+		fmt.Fprintln(w, "\tType:\t", output.Type.GoString())
+		fmt.Fprintln(w, "\tMachine:\t", output.Machine.GoString())
+		fmt.Fprintln(w)
+		w.Flush()
+	}
+
+	return nil
 }

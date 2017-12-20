@@ -27,11 +27,9 @@ func Init(fileName string) (*elf.File, error) {
 	return elf.Open(fileName)
 }
 
-func Output(content string) {
-	return
-}
-
 type Util interface {
 	DefineFlags() map[string]interface{}
-	Run(args map[string]interface{}) (string, error)
+	Init(fileName string) error
+	Run(args map[string]interface{}) error
+	Output(args map[string]interface{}) error
 }

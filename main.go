@@ -43,12 +43,24 @@ func main() {
 	flag.Usage = printUsage
 	flag.Parse()
 
-	raw, err2 := util.Run(args)
-	if err2 != nil {
+	tail := flag.Args()
+	err1 := util.Init(tail[len(tail)-1])
+	if err1 != nil {
+		fmt.Println(err1.Error())
 		return
 	}
 
-	common.Output(raw)
+	err2 := util.Run(args)
+	if err2 != nil {
+		fmt.Println(err2.Error())
+		return
+	}
+
+	err3 := util.Output(args)
+	if err3 != nil {
+		fmt.Println(err3.Error())
+		return
+	}
 
 }
 
@@ -56,10 +68,7 @@ func route() (common.Util, error) {
 
 	switch {
 	case strings.HasSuffix(os.Args[0], "readelf"):
-		util, err := readelf.Init(os.Args[len(os.Args)-1])
-		if err != nil {
-			return nil, err
-		}
+		util := readelf.New()
 		return util, nil
 	default:
 		return nil, errors.New("No such usage!")
