@@ -26,6 +26,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/NonerKao/go-binutils/as"
 	"github.com/NonerKao/go-binutils/common"
 	"github.com/NonerKao/go-binutils/readelf"
 )
@@ -67,6 +68,9 @@ func main() {
 func route() (common.Util, error) {
 
 	switch {
+	case strings.HasSuffix(os.Args[0], "as"):
+		util := as.New()
+		return util, nil
 	case strings.HasSuffix(os.Args[0], "readelf"):
 		util := readelf.New()
 		return util, nil

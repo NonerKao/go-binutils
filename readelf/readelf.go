@@ -38,10 +38,10 @@ func New() *readelfUtil {
 	return &readelfUtil{file: nil, raw: make(map[string][]byte)}
 }
 
-func (reu *readelfUtil) Init(fileName string) error {
+func (reu *readelfUtil) Init(filename string) error {
 
 	var err error
-	reu.file, err = common.Init(fileName)
+	reu.file, err = common.Init(filename)
 	if err != nil {
 		return err
 	}

@@ -1,7 +1,7 @@
 
 PACKAGE		= go-binutils
 
-UTILS		= readelf objdump
+UTILS		= readelf objdump as
 BINDIR		= $(GOPATH)/bin
 TARGETS		= $(addprefix $(BINDIR)/, $(UTILS))
 
