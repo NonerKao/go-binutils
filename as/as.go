@@ -21,9 +21,10 @@ import (
 	"bufio"
 	"bytes"
 	"debug/elf"
+	"encoding/binary"
 	"errors"
 	"flag"
-	//"fmt"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -31,16 +32,20 @@ import (
 	"github.com/NonerKao/go-binutils/rvgc"
 )
 
+type sec64 struct {
+	header  elf.Section64
+	content []string
+}
+
 type elf64 struct {
 	header   elf.Header64
-	sections []elf.Section64
+	sections map[string]*sec64
 }
 
 type asUtil struct {
 	src     *os.File
 	objFile *os.File
 	obj     *elf64
-	raw     map[string][]string
 	symtab  map[string]*elf.Sym64
 }
 
@@ -49,9 +54,8 @@ func New() *asUtil {
 		src:     nil,
 		objFile: nil,
 		obj: &elf64{
-			sections: make([]elf.Section64, 0, 10),
+			sections: make(map[string]*sec64),
 		},
-		raw:    make(map[string][]string),
 		symtab: make(map[string]*elf.Sym64),
 	}
 }
@@ -60,41 +64,47 @@ var currentOffsetShStr uint32
 var currentOffsetStr uint32
 var currentSection string
 
-func (asu *asUtil) addSection(sec string) {
-	if asu.raw[sec] == nil {
-		asu.raw[sec] = make([]string, 0)
+func (asu *asUtil) addSection(sec string) error {
+	if asu.obj.sections[sec] != nil {
+		return errors.New("Section " + sec + " already exists!")
+	} else {
+		asu.obj.sections[sec] = new(sec64)
+		asu.obj.sections[sec].content = make([]string, 0)
 	}
-	asu.raw[".shstrtab"] = append(asu.raw[".shstrtab"], sec)
+	asu.obj.sections[".shstrtab"].content = append(asu.obj.sections[".shstrtab"].content, sec)
+	thisSec := asu.obj.sections[sec]
 
-	asu.obj.sections[asu.obj.header.Shnum].Name = currentOffsetShStr
+	thisSec.header.Name = currentOffsetShStr
 	switch sec {
 	case ".shstrtab":
-		asu.obj.sections[asu.obj.header.Shnum].Type = uint32(elf.SHT_STRTAB)
-		asu.obj.sections[asu.obj.header.Shnum].Addralign = 0x1
+		thisSec.header.Type = uint32(elf.SHT_STRTAB)
+		thisSec.header.Addralign = 0x1
 	case ".strtab":
-		asu.obj.sections[asu.obj.header.Shnum].Type = uint32(elf.SHT_STRTAB)
-		asu.obj.sections[asu.obj.header.Shnum].Addralign = 0x1
+		thisSec.header.Type = uint32(elf.SHT_STRTAB)
+		thisSec.header.Addralign = 0x1
 	case ".symtab":
-		asu.obj.sections[asu.obj.header.Shnum].Type = uint32(elf.SHT_SYMTAB)
-		asu.obj.sections[asu.obj.header.Shnum].Addralign = 0x8
-		asu.obj.sections[asu.obj.header.Shnum].Entsize = 0x18
+		thisSec.header.Type = uint32(elf.SHT_SYMTAB)
+		thisSec.header.Addralign = 0x8
+		thisSec.header.Entsize = 0x18
 	case ".bss":
-		asu.obj.sections[asu.obj.header.Shnum].Type = uint32(elf.SHT_NOBITS)
-		asu.obj.sections[asu.obj.header.Shnum].Flags = uint64(elf.SHF_ALLOC | elf.SHF_WRITE)
-		asu.obj.sections[asu.obj.header.Shnum].Addralign = 0x1
+		thisSec.header.Type = uint32(elf.SHT_NOBITS)
+		thisSec.header.Flags = uint64(elf.SHF_ALLOC | elf.SHF_WRITE)
+		thisSec.header.Addralign = 0x1
 	case ".data":
-		asu.obj.sections[asu.obj.header.Shnum].Type = uint32(elf.SHT_PROGBITS)
-		asu.obj.sections[asu.obj.header.Shnum].Flags = uint64(elf.SHF_ALLOC | elf.SHF_WRITE)
-		asu.obj.sections[asu.obj.header.Shnum].Addralign = 0x1
+		thisSec.header.Type = uint32(elf.SHT_PROGBITS)
+		thisSec.header.Flags = uint64(elf.SHF_ALLOC | elf.SHF_WRITE)
+		thisSec.header.Addralign = 0x1
 	case ".text":
-		asu.obj.sections[asu.obj.header.Shnum].Type = uint32(elf.SHT_PROGBITS)
-		asu.obj.sections[asu.obj.header.Shnum].Flags = uint64(elf.SHF_ALLOC | elf.SHF_EXECINSTR)
-		asu.obj.sections[asu.obj.header.Shnum].Addralign = 0x4
+		thisSec.header.Type = uint32(elf.SHT_PROGBITS)
+		thisSec.header.Flags = uint64(elf.SHF_ALLOC | elf.SHF_EXECINSTR)
+		thisSec.header.Addralign = 0x4
 	}
 
 	currentOffsetShStr += uint32(len(sec) + 1)
 	currentSection = sec
 	asu.obj.header.Shnum += 1
+
+	return nil
 }
 
 func (asu *asUtil) Init(filename string) error {
@@ -121,10 +131,12 @@ func (asu *asUtil) Init(filename string) error {
 	asu.obj.header.Shnum = 0
 	asu.obj.header.Shstrndx = 0
 
-	asu.raw[".shstrtab"] = make([]string, 6)
-	asu.addSection(".shstrtab")
-	asu.addSection(".strtab")
-	asu.addSection(".symtab")
+	for _, sec := range internalSection {
+		err := asu.addSection(sec)
+		if err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -139,7 +151,7 @@ func (asu *asUtil) DefineFlags() map[string]interface{} {
 }
 
 func (asu *asUtil) addLabel(lab string) {
-	asu.raw[".strtab"] = append(asu.raw[".strtab"], lab)
+	asu.obj.sections[".strtab"].content = append(asu.obj.sections[".strtab"].content, lab)
 	asu.symtab[lab] = &elf.Sym64{
 		Name:  currentOffsetStr,
 		Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_FUNC),
@@ -186,6 +198,7 @@ var internalSection = []string{
 }
 
 func (asu *asUtil) dire(d []string) (bool, error) {
+	var err error
 	switch d[0] {
 	case ".section":
 		if len(d) != 2 {
@@ -196,7 +209,8 @@ func (asu *asUtil) dire(d []string) (bool, error) {
 				return false, errors.New("Syntax error: not allowed section " + d[1])
 			}
 		}
-		//addSection(d[1])
+		err = asu.addSection(d[1])
+		return false, err
 
 	case ".global":
 		if len(d) != 2 {
@@ -211,35 +225,40 @@ func (asu *asUtil) dire(d []string) (bool, error) {
 }
 
 func (asu *asUtil) inst(d []string) {
-	asu.raw[currentSection] = append(asu.raw[currentSection], string(rvgc.Cmd2Hex(d)))
+	asu.obj.sections[currentSection].content = append(asu.obj.sections[currentSection].content, string(rvgc.Cmd2Hex(d)))
 }
 
 func (asu *asUtil) write(secname string, align uint64) uint64 {
 	var size uint64
 	switch secname {
 	case ".shstrtab", ".strtab":
-		for _, str := range asu.raw[secname] {
+		for _, str := range asu.obj.sections[secname].content {
 			temp, _ := asu.objFile.WriteString(str)
 			asu.objFile.WriteString(" ")
 			size = size + uint64(temp) + 1
 		}
+		fmt.Println("write ", secname, size)
 	case ".symtab":
 		for _, syment := range asu.symtab {
-			temp, _ := asu.objFile.Write(syment)
+			var binbuf bytes.Buffer
+			binary.Write(&binbuf, binary.LittleEndian, syment)
+			temp, _ := asu.objFile.Write(binbuf.Bytes())
 			size = size + uint64(temp) + 1
 		}
+		fmt.Println("write .symtab ", size)
 	case ".data":
-		for _, data := range asu.raw[secname] {
+		for _, data := range asu.obj.sections[secname].content {
 			temp, _ := asu.objFile.WriteString(data)
 			sizeAlign := uint64(temp) / align * align
 			asu.objFile.WriteString(strings.Repeat(" ", int(sizeAlign-size)))
 			size += sizeAlign
 		}
 	case ".text":
-		for _, text := range asu.raw[secname] {
+		for _, text := range asu.obj.sections[secname].content {
 			temp, _ := asu.objFile.WriteString(text)
 			size += uint64(temp)
 		}
+		fmt.Println("write .text ", size)
 	}
 	return size
 }
@@ -253,20 +272,20 @@ func (asu *asUtil) Output(args map[string]interface{}) error {
 	}
 
 	asu.obj.header.Shoff = uint64(asu.obj.header.Ehsize)
-	asu.objFile.Write(asu.obj.header)
+	var binbuf bytes.Buffer
+	binary.Write(&binbuf, binary.LittleEndian, &asu.obj.header)
+	asu.objFile.Write(binbuf.Bytes())
 
-	var payloadOffset uint64 = uint64(uint16(len(asu.obj.sections))*asu.obj.header.Shentsize + asu.obj.header.Ehsize)
+	var contentOffset uint64 = uint64(asu.obj.header.Shnum*asu.obj.header.Shentsize + asu.obj.header.Ehsize)
 	var headerOffset uint64 = uint64(asu.obj.header.Ehsize)
-	for i, sec := range asu.obj.sections {
-		asu.objFile.Seek(int64(payloadOffset), 0)
-		tail := asu.raw[".shstrtab"][sec.Name:]
-		end := bytes.IndexByte([]byte(tail), 0)
-		name := tail[:end]
-		sec.Size = asu.write(name, sec.Addralign)
-		payloadOffset += sec.Size
+	for name, sec := range asu.obj.sections {
+		asu.objFile.Seek(int64(contentOffset), 0)
+		sec.header.Size = asu.write(name, sec.header.Addralign)
+		contentOffset += sec.header.Size
 
 		asu.objFile.Seek(int64(headerOffset), 0)
-		asu.objFile.Write(sec)
+		binary.Write(&binbuf, binary.LittleEndian, &sec.header)
+		asu.objFile.Write(binbuf.Bytes())
 		headerOffset += uint64(asu.obj.header.Shentsize)
 	}
 
