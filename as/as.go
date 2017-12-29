@@ -46,7 +46,8 @@ type asUtil struct {
 	src     *os.File
 	objFile *os.File
 	obj     *elf64
-	symtab  map[string]*elf.Sym64
+	symtab  []*elf.Sym64
+	shOrder	[]string
 }
 
 func New() *asUtil {
@@ -56,13 +57,21 @@ func New() *asUtil {
 		obj: &elf64{
 			sections: make(map[string]*sec64),
 		},
-		symtab: make(map[string]*elf.Sym64),
+		symtab: make([]*elf.Sym64, 0),
+		shOrder: make([]string, 0),
 	}
 }
 
 var currentOffsetShStr uint32
 var currentOffsetStr uint32
 var currentSection string
+
+var internalSection = []string{
+	"",
+	".shstrtab",
+	".strtab",
+	".symtab",
+}
 
 func (asu *asUtil) addSection(sec string) error {
 	if asu.obj.sections[sec] != nil {
@@ -71,17 +80,29 @@ func (asu *asUtil) addSection(sec string) error {
 		asu.obj.sections[sec] = new(sec64)
 		asu.obj.sections[sec].content = make([]string, 0)
 	}
-	asu.obj.sections[".shstrtab"].content = append(asu.obj.sections[".shstrtab"].content, sec)
-	thisSec := asu.obj.sections[sec]
 
+	asu.shOrder = append(asu.shOrder, sec)
+
+	thisSec := asu.obj.sections[sec]
 	thisSec.header.Name = currentOffsetShStr
 	switch sec {
+	case "":
+		thisSec.header.Type = uint32(elf.SHT_NULL)
+		asu.symtab = append(asu.symtab, &elf.Sym64{
+			Name:  0,
+			Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_NOTYPE),
+			Shndx: 0,
+		})
 	case ".shstrtab":
 		thisSec.header.Type = uint32(elf.SHT_STRTAB)
 		thisSec.header.Addralign = 0x1
+		thisSec.content = append(thisSec.content, "")
+		currentOffsetShStr = 1
 	case ".strtab":
 		thisSec.header.Type = uint32(elf.SHT_STRTAB)
 		thisSec.header.Addralign = 0x1
+		thisSec.content = append(thisSec.content, "")
+		currentOffsetStr = 1
 	case ".symtab":
 		thisSec.header.Type = uint32(elf.SHT_SYMTAB)
 		thisSec.header.Addralign = 0x8
@@ -98,8 +119,15 @@ func (asu *asUtil) addSection(sec string) error {
 		thisSec.header.Type = uint32(elf.SHT_PROGBITS)
 		thisSec.header.Flags = uint64(elf.SHF_ALLOC | elf.SHF_EXECINSTR)
 		thisSec.header.Addralign = 0x4
+		asu.symtab = append(asu.symtab, &elf.Sym64{
+			Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_SECTION),
+			Shndx: asu.obj.header.Shnum ,
+		})
 	}
 
+	if sec != "" {
+		asu.obj.sections[".shstrtab"].content = append(asu.obj.sections[".shstrtab"].content, sec)
+	}
 	currentOffsetShStr += uint32(len(sec) + 1)
 	currentSection = sec
 	asu.obj.header.Shnum += 1
@@ -115,7 +143,7 @@ func (asu *asUtil) Init(filename string) error {
 		return err
 	}
 
-	asu.obj.header.Ident[1] = '\x7f'
+	asu.obj.header.Ident[0] = '\x7f'
 	asu.obj.header.Ident[1] = 'E'
 	asu.obj.header.Ident[2] = 'L'
 	asu.obj.header.Ident[3] = 'F'
@@ -126,10 +154,11 @@ func (asu *asUtil) Init(filename string) error {
 	asu.obj.header.Machine = 243 //elf.EM_RISCV
 	asu.obj.header.Version = uint32(elf.EV_CURRENT)
 	asu.obj.header.Ehsize = 64
+	asu.obj.header.Flags = uint32(0x0005)
 
 	asu.obj.header.Shentsize = 64
 	asu.obj.header.Shnum = 0
-	asu.obj.header.Shstrndx = 0
+	asu.obj.header.Shstrndx = 1
 
 	for _, sec := range internalSection {
 		err := asu.addSection(sec)
@@ -152,11 +181,11 @@ func (asu *asUtil) DefineFlags() map[string]interface{} {
 
 func (asu *asUtil) addLabel(lab string) {
 	asu.obj.sections[".strtab"].content = append(asu.obj.sections[".strtab"].content, lab)
-	asu.symtab[lab] = &elf.Sym64{
+	asu.symtab = append(asu.symtab, &elf.Sym64{
 		Name:  currentOffsetStr,
-		Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_FUNC),
-		Shndx: asu.obj.header.Shnum,
-	}
+		Info:  elf.ST_INFO(elf.STB_GLOBAL, elf.STT_FUNC),
+		Shndx: asu.obj.header.Shnum -1 ,
+	})
 
 	currentOffsetStr += uint32(len(lab) + 1)
 }
@@ -167,7 +196,7 @@ func (asu *asUtil) Run(args map[string]interface{}) error {
 	line, _, err := r.ReadLine()
 	end := false
 	for err == nil {
-		sa := strings.Split(string(line), " ")
+		sa := strings.Split(strings.TrimSpace(string(line)), " ")
 
 		if sa[0][0] == '.' {
 			end, err = asu.dire(sa)
@@ -191,12 +220,6 @@ func (asu *asUtil) Run(args map[string]interface{}) error {
 	return nil
 }
 
-var internalSection = []string{
-	".symtab",
-	".strtab",
-	".shstrtab",
-}
-
 func (asu *asUtil) dire(d []string) (bool, error) {
 	var err error
 	switch d[0] {
@@ -216,7 +239,7 @@ func (asu *asUtil) dire(d []string) (bool, error) {
 		if len(d) != 2 {
 			return false, errors.New("Syntax error: label not specified!")
 		}
-		asu.symtab["add"].Info = byte(elf.ST_INFO(elf.STB_GLOBAL, elf.STT_FUNC))
+		//asu.symtab["add"].Info = byte(elf.ST_INFO(elf.STB_GLOBAL, elf.STT_NOTYPE))
 
 	case ".end":
 		return true, nil
@@ -232,20 +255,19 @@ func (asu *asUtil) write(secname string, align uint64) uint64 {
 	var size uint64
 	switch secname {
 	case ".shstrtab", ".strtab":
-		for _, str := range asu.obj.sections[secname].content {
+		for i, str := range asu.obj.sections[secname].content {
+			fmt.Println(i, str)
 			temp, _ := asu.objFile.WriteString(str)
-			asu.objFile.WriteString(" ")
+			asu.objFile.WriteString("\x00")
 			size = size + uint64(temp) + 1
 		}
-		fmt.Println("write ", secname, size)
 	case ".symtab":
 		for _, syment := range asu.symtab {
 			var binbuf bytes.Buffer
 			binary.Write(&binbuf, binary.LittleEndian, syment)
 			temp, _ := asu.objFile.Write(binbuf.Bytes())
-			size = size + uint64(temp) + 1
+			size = size + uint64(temp)
 		}
-		fmt.Println("write .symtab ", size)
 	case ".data":
 		for _, data := range asu.obj.sections[secname].content {
 			temp, _ := asu.objFile.WriteString(data)
@@ -258,7 +280,6 @@ func (asu *asUtil) write(secname string, align uint64) uint64 {
 			temp, _ := asu.objFile.WriteString(text)
 			size += uint64(temp)
 		}
-		fmt.Println("write .text ", size)
 	}
 	return size
 }
@@ -278,12 +299,21 @@ func (asu *asUtil) Output(args map[string]interface{}) error {
 
 	var contentOffset uint64 = uint64(asu.obj.header.Shnum*asu.obj.header.Shentsize + asu.obj.header.Ehsize)
 	var headerOffset uint64 = uint64(asu.obj.header.Ehsize)
-	for name, sec := range asu.obj.sections {
+	for i, name := range asu.shOrder {
+		sec := asu.obj.sections[name]
+
 		asu.objFile.Seek(int64(contentOffset), 0)
-		sec.header.Size = asu.write(name, sec.header.Addralign)
+		sec.header.Size += asu.write(name, sec.header.Addralign)
+		sec.header.Off = uint64(contentOffset)
 		contentOffset += sec.header.Size
 
+		if name == ".strtab" {
+			asu.obj.sections[".symtab"].header.Link = uint32(i)
+			asu.obj.sections[".symtab"].header.Info = 2
+		}
+
 		asu.objFile.Seek(int64(headerOffset), 0)
+		var binbuf bytes.Buffer
 		binary.Write(&binbuf, binary.LittleEndian, &sec.header)
 		asu.objFile.Write(binbuf.Bytes())
 		headerOffset += uint64(asu.obj.header.Shentsize)
