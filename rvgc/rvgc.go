@@ -3,6 +3,7 @@ package rvgc
 import (
 	"encoding/binary"
 	"fmt"
+	"strconv"
 )
 
 type RV_INST_TYPE uint32
@@ -259,16 +260,52 @@ type RV64InstU struct {
 type RV64InstJ RV64InstU
 
 var funct3 = map[string]uint32{
-	"add":  0x00,
-	"sub":  0x00,
-	"sll":  0x01,
-	"slt":  0x02,
-	"sltu": 0x03,
-	"xor":  0x04,
-	"srl":  0x05,
-	"sra":  0x05,
-	"or":   0x06,
-	"and":  0x07,
+	"add":   0x00,
+	"addw":  0x00,
+	"addi":  0x00,
+	"addiw": 0x00,
+	"sub":   0x00,
+	"subw":  0x00,
+	"sll":   0x01,
+	"slli":  0x01,
+	"slt":   0x02,
+	"slti":  0x02,
+	"sltu":  0x03,
+	"sltiu": 0x02,
+	"xor":   0x04,
+	"xori":  0x04,
+	"srl":   0x05,
+	"srlw":  0x05,
+	"srli":  0x05,
+	"srliw": 0x05,
+	"sra":   0x05,
+	"sraw":  0x05,
+	"srai":  0x05,
+	"sraiw": 0x05,
+	"or":    0x06,
+	"ori":   0x06,
+	"and":   0x07,
+	"andi":  0x07,
+
+	"lb":   0x00,
+	"lbu":  0x04,
+	"sb":   0x04,
+	"lh":   0x01,
+	"lhu":  0x05,
+	"sh":   0x01,
+	"lw":   0x02,
+	"lwu":  0x06,
+	"sw":   0x02,
+	"ld":   0x03,
+	"sd":   0x03,
+	"jalr": 0x00,
+
+	"beq":  0x00,
+	"bne":  0x01,
+	"blt":  0x04,
+	"bgt":  0x05,
+	"bltu": 0x06,
+	"bgtu": 0x07,
 }
 
 func InstToBin(inst []string) []byte {
@@ -282,19 +319,76 @@ func InstToBin(inst []string) []byte {
 		rd := reg2bits[inst[1]]
 		rs1 := reg2bits[inst[2]]
 		rs2 := reg2bits[inst[3]]
-		f3 := funct3[inst[1]]
+		f3 := funct3[inst[0]]
 
 		var f7 uint32
-		if inst[0] == "sub" || inst[0] == "sra" {
+		if inst[0] == "sub" || inst[0] == "sra" || inst[0] == "sraw" {
 			f7 = 0x20
 		}
 
 		bits = f7<<25 | rs2<<20 | rs1<<15 | f3<<12 | rd<<7 | uint32(op)
+
 	case RV_INST_I_TYPE:
+		var isop int
+		if (op == RV_OPCODE_OP_IMM) || (op == RV_OPCODE_OP_IMM_32) {
+			isop = 1
+		}
+
+		f3 := funct3[inst[0]]
+		var issh bool
+		if f3 == 0x01 || f3 == 0x05 {
+			issh = true
+		}
+
+		rd := reg2bits[inst[1]]
+		rs1 := reg2bits[inst[2+isop]]
+		if issh {
+			shamt, _ := strconv.ParseUint(inst[3-isop], 16, 6)
+
+			var f6 uint32
+			if inst[0] == "srai" || inst[0] == "sraiw" {
+				f6 = 0x10
+			} else {
+				f6 = 0
+			}
+
+			bits = f6<<26 | uint32(shamt)<<20 | rs1<<15 | f3<<12 | rd<<7 | uint32(op)
+		} else {
+			imm, _ := strconv.ParseInt(inst[3-isop], 10, 12)
+			bits = uint32(imm)<<20 | rs1<<15 | f3<<12 | rd<<7 | uint32(op)
+		}
+
 	case RV_INST_S_TYPE:
+		f3 := funct3[inst[0]]
+		rs1 := reg2bits[inst[1]]
+		imm, _ := strconv.ParseInt(inst[2], 10, 12)
+		rs2 := reg2bits[inst[3]]
+
+		bits = uint32(imm) << 20
+		bits &= 0xfe000000
+		bits |= (rs2<<20 | rs1<<15 | f3<<12 | (uint32(imm)&0x1f)<<7 | uint32(op))
+
 	case RV_INST_B_TYPE:
+		f3 := funct3[inst[0]]
+		rs1 := reg2bits[inst[1]]
+		rs2 := reg2bits[inst[2]]
+		imm, _ := strconv.ParseInt(inst[3], 16, 20)
+
+		imm12 := uint32((imm & 0x800) >> 11)
+		imm11 := uint32((imm & 0x400) >> 10)
+		imm10_5 := uint32((imm & 0x3f0) >> 4)
+		imm4_1 := uint32(imm & 0x00f)
+
+		bits = imm12<<31 | imm10_5<<25 | rs2<<20 | rs1<<15 | f3<<12 | imm4_1<<8 | imm11<<7 | uint32(op)
+
 	case RV_INST_U_TYPE:
+		rd := reg2bits[inst[1]]
+		imm, _ := strconv.ParseInt(inst[2], 16, 20)
+		bits = uint32(imm)<<12 | rd<<7 | uint32(op)
+
 	case RV_INST_J_TYPE:
+	case RV_INST_NONE:
+		bits |= uint32(op)
 	}
 
 	ret := make([]byte, 4)
