@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/NonerKao/go-binutils/rvgc"
@@ -47,7 +48,7 @@ type asUtil struct {
 	objFile *os.File
 	obj     *elf64
 	symtab  []*elf.Sym64
-	shOrder	[]string
+	shOrder []string
 }
 
 func New() *asUtil {
@@ -57,7 +58,7 @@ func New() *asUtil {
 		obj: &elf64{
 			sections: make(map[string]*sec64),
 		},
-		symtab: make([]*elf.Sym64, 0),
+		symtab:  make([]*elf.Sym64, 0),
 		shOrder: make([]string, 0),
 	}
 }
@@ -121,7 +122,7 @@ func (asu *asUtil) addSection(sec string) error {
 		thisSec.header.Addralign = 0x4
 		asu.symtab = append(asu.symtab, &elf.Sym64{
 			Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_SECTION),
-			Shndx: asu.obj.header.Shnum ,
+			Shndx: asu.obj.header.Shnum,
 		})
 	}
 
@@ -184,10 +185,21 @@ func (asu *asUtil) addLabel(lab string) {
 	asu.symtab = append(asu.symtab, &elf.Sym64{
 		Name:  currentOffsetStr,
 		Info:  elf.ST_INFO(elf.STB_GLOBAL, elf.STT_FUNC),
-		Shndx: asu.obj.header.Shnum -1 ,
+		Shndx: asu.obj.header.Shnum - 1,
 	})
 
 	currentOffsetStr += uint32(len(lab) + 1)
+}
+
+func preProcessLine(line string) []string {
+
+	rePunc := regexp.MustCompile(`,()`)
+	reSpace := regexp.MustCompile(`[[:space:]]+`)
+	line = rePunc.ReplaceAllString(line, " ")
+	line = reSpace.ReplaceAllString(line, " ")
+	sa := strings.Split(strings.TrimSpace(string(line)), " ")
+
+	return sa
 }
 
 func (asu *asUtil) Run(args map[string]interface{}) error {
@@ -196,7 +208,7 @@ func (asu *asUtil) Run(args map[string]interface{}) error {
 	line, _, err := r.ReadLine()
 	end := false
 	for err == nil {
-		sa := strings.Split(strings.TrimSpace(string(line)), " ")
+		sa := preProcessLine(string(line))
 
 		if sa[0][0] == '.' {
 			end, err = asu.dire(sa)
@@ -248,7 +260,7 @@ func (asu *asUtil) dire(d []string) (bool, error) {
 }
 
 func (asu *asUtil) inst(d []string) {
-	asu.obj.sections[currentSection].content = append(asu.obj.sections[currentSection].content, string(rvgc.Cmd2Hex(d)))
+	asu.obj.sections[currentSection].content = append(asu.obj.sections[currentSection].content, string(rvgc.InstToBin(d)))
 }
 
 func (asu *asUtil) write(secname string, align uint64) uint64 {
