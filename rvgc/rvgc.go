@@ -289,7 +289,7 @@ var funct3 = map[string]uint32{
 
 	"lb":   0x00,
 	"lbu":  0x04,
-	"sb":   0x04,
+	"sb":   0x00,
 	"lh":   0x01,
 	"lhu":  0x05,
 	"sh":   0x01,
@@ -341,9 +341,9 @@ func InstToBin(inst []string) []byte {
 		}
 
 		rd := reg2bits[inst[1]]
-		rs1 := reg2bits[inst[2+isop]]
+		rs1 := reg2bits[inst[3-isop]]
 		if issh {
-			shamt, _ := strconv.ParseUint(inst[3-isop], 16, 6)
+			shamt, _ := strconv.ParseUint(inst[2+isop], 16, 6)
 
 			var f6 uint32
 			if inst[0] == "srai" || inst[0] == "sraiw" {
@@ -354,15 +354,15 @@ func InstToBin(inst []string) []byte {
 
 			bits = f6<<26 | uint32(shamt)<<20 | rs1<<15 | f3<<12 | rd<<7 | uint32(op)
 		} else {
-			imm, _ := strconv.ParseInt(inst[3-isop], 10, 12)
+			imm, _ := strconv.ParseInt(inst[2+isop], 10, 12)
 			bits = uint32(imm)<<20 | rs1<<15 | f3<<12 | rd<<7 | uint32(op)
 		}
 
 	case RV_INST_S_TYPE:
 		f3 := funct3[inst[0]]
-		rs1 := reg2bits[inst[1]]
+		rs1 := reg2bits[inst[3]]
 		imm, _ := strconv.ParseInt(inst[2], 10, 12)
-		rs2 := reg2bits[inst[3]]
+		rs2 := reg2bits[inst[1]]
 
 		bits = uint32(imm) << 20
 		bits &= 0xfe000000
@@ -372,18 +372,21 @@ func InstToBin(inst []string) []byte {
 		f3 := funct3[inst[0]]
 		rs1 := reg2bits[inst[1]]
 		rs2 := reg2bits[inst[2]]
-		imm, _ := strconv.ParseInt(inst[3], 16, 20)
+		imm, _ := strconv.ParseUint(inst[3], 16, 12)
 
+		fmt.Println(imm)
+		fmt.Println(imm & 0x800)
 		imm12 := uint32((imm & 0x800) >> 11)
 		imm11 := uint32((imm & 0x400) >> 10)
 		imm10_5 := uint32((imm & 0x3f0) >> 4)
 		imm4_1 := uint32(imm & 0x00f)
+		fmt.Println(imm12, imm11, imm10_5, imm4_1)
 
 		bits = imm12<<31 | imm10_5<<25 | rs2<<20 | rs1<<15 | f3<<12 | imm4_1<<8 | imm11<<7 | uint32(op)
 
 	case RV_INST_U_TYPE:
 		rd := reg2bits[inst[1]]
-		imm, _ := strconv.ParseInt(inst[2], 16, 20)
+		imm, _ := strconv.ParseUint(inst[2], 16, 20)
 		bits = uint32(imm)<<12 | rd<<7 | uint32(op)
 
 	case RV_INST_J_TYPE:

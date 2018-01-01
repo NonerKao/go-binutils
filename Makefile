@@ -16,7 +16,7 @@ build: common $(UTILS) main.go
 install: $(BINDIR)/$(PACKAGE) $(TARGETS)
 
 $(BINDIR)/go-binutils: common $(UTILS) main.go
-	go install
+	/riscv-go/bin/go install
 
 $(TARGETS): $(BINDIR)/%: %
 	ln -s $(BINDIR)/$(PACKAGE) $(BINDIR)/$<
