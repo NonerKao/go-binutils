@@ -24,7 +24,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"flag"
-	"fmt"
 	"io"
 	"os"
 	"regexp"
@@ -193,7 +192,7 @@ func (asu *asUtil) addLabel(lab string) {
 
 func preProcessLine(line string) []string {
 
-	rePunc := regexp.MustCompile(`,()`)
+	rePunc := regexp.MustCompile(`[,()]`)
 	reSpace := regexp.MustCompile(`[[:space:]]+`)
 	line = rePunc.ReplaceAllString(line, " ")
 	line = reSpace.ReplaceAllString(line, " ")
@@ -267,8 +266,7 @@ func (asu *asUtil) write(secname string, align uint64) uint64 {
 	var size uint64
 	switch secname {
 	case ".shstrtab", ".strtab":
-		for i, str := range asu.obj.sections[secname].content {
-			fmt.Println(i, str)
+		for _, str := range asu.obj.sections[secname].content {
 			temp, _ := asu.objFile.WriteString(str)
 			asu.objFile.WriteString("\x00")
 			size = size + uint64(temp) + 1
