@@ -15,7 +15,7 @@
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 //
 
-package as
+package strip
 
 import (
 	"bufio"
@@ -28,26 +28,13 @@ import (
 	"os"
 	"regexp"
 	"strings"
-
-	"github.com/NonerKao/go-binutils/rvgc"
 )
 
-type sec64 struct {
-	header  elf.Section64
-	content []string
-}
-
-type elf64 struct {
-	header   elf.Header64
-	sections map[string]*sec64
-}
-
-type asUtil struct {
-	src     *os.File
+type stripUtil struct {
+	src     *elf.FILE
 	objFile *os.File
 	obj     *elf64
 	symtab  []*elf.Sym64
-	rela    []*elf.Rela64
 	shOrder []string
 }
 
@@ -59,14 +46,12 @@ func New() *asUtil {
 			sections: make(map[string]*sec64),
 		},
 		symtab:  make([]*elf.Sym64, 0),
-		rela:    make([]*elf.Rela64, 0),
 		shOrder: make([]string, 0),
 	}
 }
 
 var currentOffsetShStr uint32
 var currentOffsetStr uint32
-var currentOffset uint64
 var currentSection string
 
 var internalSection = []string{
@@ -96,11 +81,6 @@ func (asu *asUtil) addSection(sec string) error {
 			Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_NOTYPE),
 			Shndx: 0,
 		})
-		/*asu.rela = append(asu.rela, &elf.Rela64{
-			Off:    0,
-			Info:   elf.R_INFO(0, uint32(elf.R_RISCV_NONE)),
-			Addend: 0,
-		})*/
 	case ".shstrtab":
 		thisSec.header.Type = uint32(elf.SHT_STRTAB)
 		thisSec.header.Addralign = 0x1
@@ -131,11 +111,6 @@ func (asu *asUtil) addSection(sec string) error {
 			Info:  elf.ST_INFO(elf.STB_LOCAL, elf.STT_SECTION),
 			Shndx: asu.obj.header.Shnum,
 		})
-	case ".rela.text":
-		thisSec.header.Type = uint32(elf.SHT_RELA)
-		thisSec.header.Flags = uint64(elf.SHF_INFO_LINK)
-		thisSec.header.Addralign = 0x8
-		thisSec.header.Entsize = 0x18
 	}
 
 	if sec != "" {
@@ -272,29 +247,7 @@ func (asu *asUtil) dire(d []string) (bool, error) {
 }
 
 func (asu *asUtil) inst(d []string) {
-	b, r := rvgc.InstToBin(d)
-
-	asu.obj.sections[currentSection].content = append(asu.obj.sections[currentSection].content, string(b))
-
-	switch r {
-	case elf.R_RISCV_NONE:
-		break
-	case elf.R_RISCV_CALL:
-		asu.obj.sections[".strtab"].content = append(asu.obj.sections[".strtab"].content, d[1])
-		asu.symtab = append(asu.symtab, &elf.Sym64{
-			Name:  currentOffsetStr,
-			Info:  elf.ST_INFO(elf.STB_GLOBAL, elf.STT_NOTYPE),
-			Shndx: 0,
-		})
-		asu.rela = append(asu.rela, &elf.Rela64{
-			Off:    currentOffset,
-			Info:   elf.R_INFO(uint32(len(asu.symtab)-1), uint32(elf.R_RISCV_CALL)),
-			Addend: 0,
-		})
-		currentOffsetStr += uint32(len(d[1]) + 1)
-	}
-
-	currentOffset += uint64(len(b))
+	asu.obj.sections[currentSection].content = append(asu.obj.sections[currentSection].content, string(rvgc.InstToBin(d)))
 }
 
 func (asu *asUtil) write(secname string, align uint64) uint64 {
@@ -310,13 +263,6 @@ func (asu *asUtil) write(secname string, align uint64) uint64 {
 		for _, syment := range asu.symtab {
 			var binbuf bytes.Buffer
 			binary.Write(&binbuf, binary.LittleEndian, syment)
-			temp, _ := asu.objFile.Write(binbuf.Bytes())
-			size = size + uint64(temp)
-		}
-	case ".rela.text":
-		for _, rent := range asu.rela {
-			var binbuf bytes.Buffer
-			binary.Write(&binbuf, binary.LittleEndian, rent)
 			temp, _ := asu.objFile.Write(binbuf.Bytes())
 			size = size + uint64(temp)
 		}
@@ -344,8 +290,6 @@ func (asu *asUtil) Output(args map[string]interface{}) error {
 		return err
 	}
 
-	err = asu.addSection(".rela.text")
-
 	asu.obj.header.Shoff = uint64(asu.obj.header.Ehsize)
 	var binbuf bytes.Buffer
 	binary.Write(&binbuf, binary.LittleEndian, &asu.obj.header)
@@ -364,10 +308,6 @@ func (asu *asUtil) Output(args map[string]interface{}) error {
 		if name == ".strtab" {
 			asu.obj.sections[".symtab"].header.Link = uint32(i)
 			asu.obj.sections[".symtab"].header.Info = 2
-		} else if name == ".symtab" {
-			asu.obj.sections[".rela.text"].header.Link = uint32(i)
-		} else if name == ".text" {
-			asu.obj.sections[".rela.text"].header.Info = uint32(i)
 		}
 
 		asu.objFile.Seek(int64(headerOffset), 0)
