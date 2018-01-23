@@ -1,7 +1,7 @@
 
 PACKAGE		= go-binutils
 
-UTILS		= readelf objdump as
+UTILS		= readelf objdump as size nm 
 BINDIR		= $(GOPATH)/bin
 TARGETS		= $(addprefix $(BINDIR)/, $(UTILS))
 GOROOT		= /riscv-go/

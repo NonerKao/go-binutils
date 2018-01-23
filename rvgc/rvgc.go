@@ -1,6 +1,7 @@
 package rvgc
 
 import (
+	"debug/elf"
 	"encoding/binary"
 	"fmt"
 	"strconv"
@@ -16,6 +17,7 @@ const (
 	RV_INST_B_TYPE RV_INST_TYPE = 4
 	RV_INST_U_TYPE RV_INST_TYPE = 5
 	RV_INST_J_TYPE RV_INST_TYPE = 6
+	RV_INST_PSEUDO RV_INST_TYPE = 7
 )
 
 var mnem2type = map[string]RV_INST_TYPE{
@@ -76,22 +78,24 @@ var mnem2type = map[string]RV_INST_TYPE{
 	"auipc": RV_INST_U_TYPE,
 
 	"ecall": RV_INST_NONE,
+
+	"call": RV_INST_PSEUDO,
 }
 
 type RV_OPCODE_TYPE uint32
 
 const (
-	RV_OPCODE_OP        RV_OPCODE_TYPE = 0x33
-	RV_OPCODE_OP_IMM    RV_OPCODE_TYPE = 0x13
-	RV_OPCODE_OP_32     RV_OPCODE_TYPE = 0x3b
-	RV_OPCODE_OP_IMM_32 RV_OPCODE_TYPE = 0x1b
-	RV_OPCODE_LUI       RV_OPCODE_TYPE = 0x37
-	RV_OPCODE_AUIPC     RV_OPCODE_TYPE = 0x17
-	RV_OPCODE_JAL       RV_OPCODE_TYPE = 0x6f
-	RV_OPCODE_JALR      RV_OPCODE_TYPE = 0x67
 	RV_OPCODE_LOAD      RV_OPCODE_TYPE = 0x03
+	RV_OPCODE_OP_IMM    RV_OPCODE_TYPE = 0x13
+	RV_OPCODE_AUIPC     RV_OPCODE_TYPE = 0x17
+	RV_OPCODE_OP_IMM_32 RV_OPCODE_TYPE = 0x1b
 	RV_OPCODE_STORE     RV_OPCODE_TYPE = 0x23
+	RV_OPCODE_OP        RV_OPCODE_TYPE = 0x33
+	RV_OPCODE_LUI       RV_OPCODE_TYPE = 0x37
+	RV_OPCODE_OP_32     RV_OPCODE_TYPE = 0x3b
 	RV_OPCODE_BRANCH    RV_OPCODE_TYPE = 0x63
+	RV_OPCODE_JALR      RV_OPCODE_TYPE = 0x67
+	RV_OPCODE_JAL       RV_OPCODE_TYPE = 0x6f
 	RV_OPCODE_SYSTEM    RV_OPCODE_TYPE = 0x73
 )
 
@@ -155,6 +159,40 @@ var mnem2opcode = map[string]RV_OPCODE_TYPE{
 	"ecall": RV_OPCODE_SYSTEM,
 }
 
+var bits2reg = map[byte]string{
+	0x00: "zero",
+	0x01: "ra",
+	0x02: "sp",
+	0x03: "gp",
+	0x04: "tp",
+	0x05: "t0",
+	0x06: "t1",
+	0x07: "t2",
+	0x08: "fp",
+	0x09: "s1",
+	0x0a: "a0",
+	0x0b: "a1",
+	0x0c: "a2",
+	0x0d: "a3",
+	0x0e: "a4",
+	0x0f: "a5",
+	0x10: "a6",
+	0x11: "a7",
+	0x12: "s2",
+	0x13: "s3",
+	0x14: "s4",
+	0x15: "s5",
+	0x16: "s6",
+	0x17: "s7",
+	0x18: "s8",
+	0x19: "s9",
+	0x1a: "s10",
+	0x1b: "s11",
+	0x1c: "t3",
+	0x1d: "t4",
+	0x1e: "t5",
+	0x1f: "t6",
+}
 var reg2bits = map[string]uint32{
 	"x0":   0x00,
 	"zero": 0x00,
@@ -271,7 +309,7 @@ var funct3 = map[string]uint32{
 	"slt":   0x02,
 	"slti":  0x02,
 	"sltu":  0x03,
-	"sltiu": 0x02,
+	"sltiu": 0x03,
 	"xor":   0x04,
 	"xori":  0x04,
 	"srl":   0x05,
@@ -308,10 +346,200 @@ var funct3 = map[string]uint32{
 	"bgtu": 0x07,
 }
 
-func InstToBin(inst []string) []byte {
+func BinToInst(bin []byte) string {
+
+	nm, t := instType(bin)
+	if nm == "noimp" {
+		return "noimp"
+	}
+	rd := bits2reg[(bin[1]&0x0f)<<1+bin[0]>>7]
+	rs1 := bits2reg[(bin[2]&0x0f)<<1+bin[1]>>7]
+	rs2 := bits2reg[(bin[2]&0xf0)>>4+(bin[3]&0x01)<<4]
+
+	switch t {
+	case RV_INST_R_TYPE:
+		return nm + " " + rd + "," + rs1 + "," + rs2
+	case RV_INST_I_TYPE:
+		imm := bin[2]>>4 + bin[3]<<4
+		return nm + " " + rd + "," + rs1 + "," + strconv.FormatUint(uint64(imm), 16)
+	case RV_INST_S_TYPE:
+		imm := (bin[3]&0xfe)<<5 + (bin[1]&0x0f)<<1 + bin[0]>>7
+		return nm + " " + rs2 + "," + rs1 + "," + strconv.FormatUint(uint64(imm), 16)
+	case RV_INST_B_TYPE:
+		imm := ((bin[3]&0x80)<<4 + (bin[0]&0x80)<<3 + (bin[3]&0x7e)<<3 + (bin[1] & 0x0f)) << 1
+		return nm + " " + rs1 + "," + rs2 + "," + strconv.FormatUint(uint64(imm), 16)
+	case RV_INST_U_TYPE:
+		imm := uint32(bin[3])<<24 + uint32(bin[2])<<16 + uint32(bin[1]&0xf0)<<8
+		return nm + " " + rd + "," + strconv.FormatUint(uint64(imm), 16)
+	case RV_INST_J_TYPE:
+	}
+
+	return nm
+}
+
+func instType(bin []byte) (string, RV_INST_TYPE) {
+	var nm string
+	var t RV_INST_TYPE
+
+	switch RV_OPCODE_TYPE(bin[0] & 0x7f) {
+	case RV_OPCODE_LOAD:
+		t = RV_INST_R_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			nm = "lb"
+		case 1:
+			nm = "lh"
+		case 2:
+			nm = "lw"
+		case 3:
+			nm = "ld"
+		case 4:
+			nm = "lbu"
+		case 5:
+			nm = "lhu"
+		case 6:
+			nm = "lwu"
+		}
+		return nm, t
+	case RV_OPCODE_OP_IMM:
+		t = RV_INST_I_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			nm = "addi"
+		case 1:
+			nm = "slli"
+		case 2:
+			nm = "slti"
+		case 3:
+			nm = "sltiu"
+		case 4:
+			nm = "ori"
+		case 5:
+			if bin[3]&0x40 == 0 {
+				nm = "srli"
+			} else {
+				nm = "srai"
+			}
+		case 6:
+			nm = "xori"
+		case 7:
+			nm = "andi"
+		}
+		return nm, t
+	case RV_OPCODE_AUIPC:
+		return "auipc", RV_INST_U_TYPE
+	case RV_OPCODE_OP_IMM_32:
+		t = RV_INST_I_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			nm = "addiw"
+		case 1:
+			nm = "slliw"
+		case 5:
+			if bin[3]&0x40 == 0 {
+				nm = "srliw"
+			} else {
+				nm = "sraiw"
+			}
+		}
+		return nm, t
+	case RV_OPCODE_STORE:
+		t = RV_INST_S_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			nm = "sb"
+		case 1:
+			nm = "sh"
+		case 2:
+			nm = "sw"
+		case 3:
+			nm = "sd"
+		}
+		return nm, t
+	case RV_OPCODE_OP:
+		t = RV_INST_R_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			if bin[3]&0x40 == 0 {
+				nm = "add"
+			} else {
+				nm = "sub"
+			}
+		case 1:
+			nm = "sll"
+		case 2:
+			nm = "slt"
+		case 3:
+			nm = "sltu"
+		case 4:
+			nm = "or"
+		case 5:
+			if bin[3]&0x40 == 0 {
+				nm = "srl"
+			} else {
+				nm = "sra"
+			}
+		case 6:
+			nm = "xor"
+		case 7:
+			nm = "and"
+		}
+		return nm, t
+	case RV_OPCODE_LUI:
+		return "lui", RV_INST_U_TYPE
+	case RV_OPCODE_OP_32:
+		t = RV_INST_R_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			if bin[3]&0x40 == 0 {
+				nm = "addw"
+			} else {
+				nm = "subw"
+			}
+		case 1:
+			nm = "sllw"
+		case 5:
+			if bin[3]&0x40 == 0 {
+				nm = "srlw"
+			} else {
+				nm = "sraw"
+			}
+		}
+		return nm, t
+	case RV_OPCODE_BRANCH:
+		t = RV_INST_B_TYPE
+		switch (bin[1] & 0x70) >> 4 {
+		case 0:
+			nm = "beq"
+		case 1:
+			nm = "bne"
+		case 4:
+			nm = "blt"
+		case 5:
+			nm = "bgt"
+		case 6:
+			nm = "bltu"
+		case 7:
+			nm = "bgtu"
+		}
+		return nm, t
+	case RV_OPCODE_JALR:
+		return "jalr", RV_INST_I_TYPE
+	case RV_OPCODE_JAL:
+		return "jal", RV_INST_J_TYPE
+	case RV_OPCODE_SYSTEM:
+		return "ecall", RV_INST_NONE
+	}
+	return "noimp", RV_INST_NONE
+}
+
+func InstToBin(inst []string) ([]byte, elf.R_RISCV) {
 
 	t := mnem2type[inst[0]]
-	op := mnem2opcode[inst[0]]
+	var op RV_OPCODE_TYPE
+	if t != RV_INST_PSEUDO {
+		op = mnem2opcode[inst[0]]
+	}
 
 	var bits uint32
 	switch t {
@@ -392,18 +620,15 @@ func InstToBin(inst []string) []byte {
 	case RV_INST_J_TYPE:
 	case RV_INST_NONE:
 		bits |= uint32(op)
+	case RV_INST_PSEUDO:
+		if inst[0] == "call" {
+			ra, _ := InstToBin([]string{"auipc", "ra", "0"})
+			rb, _ := InstToBin([]string{"jalr", "ra", "0", "ra"})
+			return append(ra, rb...), elf.R_RISCV_CALL
+		}
 	}
 
 	ret := make([]byte, 4)
 	binary.LittleEndian.PutUint32(ret, bits)
-	return ret
-}
-
-func Cmd2Hex(cmd []string) []byte {
-	fmt.Println(cmd)
-	if cmd[0] == "add" {
-		return []byte{'\x33', '\x05', '\xb5', '\x00'}
-	} else {
-		return []byte{'\x67', '\x80', '\x00', '\x00'}
-	}
+	return ret, elf.R_RISCV_NONE
 }

@@ -28,7 +28,10 @@ import (
 
 	"github.com/NonerKao/go-binutils/as"
 	"github.com/NonerKao/go-binutils/common"
+	"github.com/NonerKao/go-binutils/nm"
+	"github.com/NonerKao/go-binutils/objdump"
 	"github.com/NonerKao/go-binutils/readelf"
+	"github.com/NonerKao/go-binutils/size"
 )
 
 func main() {
@@ -67,16 +70,22 @@ func main() {
 
 func route() (common.Util, error) {
 
+	var util common.Util
 	switch {
 	case strings.HasSuffix(os.Args[0], "as"):
-		util := as.New()
-		return util, nil
+		util = as.New()
+	case strings.HasSuffix(os.Args[0], "nm"):
+		util = nm.New()
+	case strings.HasSuffix(os.Args[0], "objdump"):
+		util = objdump.New()
 	case strings.HasSuffix(os.Args[0], "readelf"):
-		util := readelf.New()
-		return util, nil
+		util = readelf.New()
+	case strings.HasSuffix(os.Args[0], "size"):
+		util = size.New()
 	default:
 		return nil, errors.New("No such usage!")
 	}
+	return util, nil
 }
 
 func printUsage() {

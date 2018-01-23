@@ -19,6 +19,7 @@ package readelf
 
 import (
 	"debug/elf"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -55,6 +56,7 @@ func (reu *readelfUtil) DefineFlags() map[string]interface{} {
 		"h": flag.Bool("h", false, "Show file header"),
 		"l": flag.Bool("l", false, "Show program headers"),
 		"S": flag.Bool("S", false, "Show section headers"),
+		"r": flag.Bool("r", false, "Show relocation sections"),
 	}
 
 	return args
@@ -101,6 +103,34 @@ func (reu *readelfUtil) Run(args map[string]interface{}) error {
 		str = re.ReplaceAllString(str, "[")
 
 		reu.raw["S"] = []byte(str)
+	}
+
+	if *args["r"].(*bool) {
+		var index int
+		for i, p := range reu.file.Sections {
+			if p.Name == ".rela.text" {
+				index = i
+				break
+			}
+		}
+
+		var rela elf.Rela64
+		str := "]"
+		var end error
+		r := reu.file.Sections[index].Open()
+		for ; end == nil; end = binary.Read(r, binary.LittleEndian, &rela) {
+
+			raw, err := json.Marshal(rela)
+			if err != nil {
+				return err
+			}
+
+			str = "," + string(raw) + str
+		}
+		re, _ := regexp.Compile("^,")
+		str = re.ReplaceAllString(str, "[")
+
+		reu.raw["r"] = []byte(str)
 	}
 
 	return nil
@@ -154,6 +184,27 @@ func (reu *readelfUtil) Output(args map[string]interface{}) error {
 			fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%x\t%x\t%d\t%d\t%d\t0x%x\n",
 				i, s.Name, s.Type.GoString(), s.Flags.GoString(),
 				s.Addr, s.Offset, s.Size, s.Link, s.Info, s.Addralign)
+		}
+		fmt.Fprintln(w)
+		w.Flush()
+	}
+
+	if *args["r"].(*bool) {
+		var output []elf.Rela64
+		json.Unmarshal(reu.raw["r"], &output)
+
+		fmt.Fprintln(w, "Relocation:\t\t\t")
+		fmt.Fprintln(w, "Offset\tType\tSymbol\tAppend")
+
+		syms, _ := reu.file.Symbols()
+
+		for _, s := range output {
+			if elf.R_SYM64(s.Info) == 0 {
+				continue
+			}
+
+			fmt.Fprintf(w, "%016x\t%s\t%s\t%d\n",
+				s.Off, elf.R_RISCV(elf.R_TYPE64(s.Info)).GoString(), syms[elf.R_SYM64(s.Info)-1].Name, s.Addend)
 		}
 		fmt.Fprintln(w)
 		w.Flush()
